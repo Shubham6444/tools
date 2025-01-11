@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhanced OCR and Text Selection Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f0f0f0;
+      display: flex;
+      height: 100vh;
+    }
+    .container {
+      display: flex;
+      width: 100%;
+      max-width: 1600px;
+      margin: 0 auto;
+      gap: 20px;
+    }
+    .form-container {
+      flex: 0 0 300px;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow-y: auto;
+      max-height: calc(100vh - 40px);
+      resize: horizontal;
+      overflow: auto;
+    }
+    .form-container h2 {
+      margin-top: 0;
+      color: #333;
+    }
+    .form-container label {
+      font-weight: bold;
+      margin-top: 10px;
+      display: block;
+      color: #555;
+    }
+    .form-container input {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    .image-container {
+      flex: 1;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      resize: horizontal;
+      overflow: auto;
+    }
+    #canvasContainer {
+      flex: 1;
+      overflow: auto;
+
+      position: relative;
+    }
+    #imageCanvas {
+      max-width: 200%;
+      height: auto;
+      border: 2px dashed #ccc;
+      border-radius: 4px;
+      cursor: crosshair;
+    }
+    #dropZone {
+      border: 2px dashed #ccc;
+      border-radius: 4px;
+      padding: 20px;
+      text-align: center;
+      color: #666;
+      font-size: 8px;
+      margin-bottom: 20px;
+      cursor: pointer;
+      display: none;
+    }
+    #dropZone.dragover {
+      background-color: #e0e0e0;
+      border-color: #999;
+    }
+    #loadingIndicator {
+      display: none;
+      margin-top: 10px;
+      font-weight: bold;
+      color: #666;
+    }
+    #selectedText {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+      min-height: 50px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    #copyNotification {
+      display: none;
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+
+
+
+
+
+    
+    #form1{display: none;}
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <button id="btn" onclick="opena()">open</button>
+    <div class="form-container" id="form1">
+      <h2>Shipper</h2>
+      <label for="shipperFirstName">First Name</label>
+      <input type="text" id="shipperFirstName">
+
+      <label for="shipperCompanyName">Company Name</label>
+      <input type="text" id="shipperCompanyName">
+
+      <label for="shipperAddress1">Address 1</label>
+      <input type="text" id="shipperAddress1">
+
+      <label for="shipperAddress2">Address 2</label>
+      <input type="text" id="shipperAddress2">
+
+      <label for="shipperCity">City</label>
+      <input type="text" id="shipperCity">
+
+      <label for="shipperZip">ZIP Code</label>
+      <input type="text" id="shipperZip">
+
+      <label for="shipperCountry">Country</label>
+      <input type="text" id="shipperCountry">
+
+      <h2>Recipient</h2>
+      <label for="recipientFirstName">First Name</label>
+      <input type="text" id="recipientFirstName">
+
+      <label for="recipientCompanyName">Company Name</label>
+      <input type="text" id="recipientCompanyName">
+
+      <label for="recipientAddress1">Address 1</label>
+      <input type="text" id="recipientAddress1">
+
+      <label for="recipientAddress2">Address 2</label>
+      <input type="text" id="recipientAddress2">
+
+      <label for="recipientCity">City</label>
+      <input type="text" id="recipientCity">
+
+      <label for="recipientZip">ZIP Code</label>
+      <input type="text" id="recipientZip">
+
+      <label for="recipientCountry">Country</label>
+      <input type="text" id="recipientCountry">
+    </div>
+
+    <div class="image-container">
+      <div id="dropZone">
+        Drag & drop an image here or click to upload
+        <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+      </div>
+      <div id="canvasContainer">
+        <canvas id="imageCanvas"></canvas>
+      </div>
+      <div id="loadingIndicator">Processing image...</div>
+      <div id="selectedText"></div>
+    </div>
+  </div>
+  <div id="copyNotification">Text copied to clipboard!</div>
+  <script>
+    const canvas = document.getElementById('imageCanvas');
+    const ctx = canvas.getContext('2d');
+    const imageUpload = document.getElementById('imageUpload');
+    const dropZone = document.getElementById('dropZone');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const selectedTextDiv = document.getElementById('selectedText');
+    const canvasContainer = document.getElementById('canvasContainer');
+    const copyNotification = document.getElementById('copyNotification');
+  
+    let img = new Image();
+    let recognizedWords = [];
+    let isDragging = false;
+    let startX, startY, endX, endY;
+    let activeField = null;
+    let selectedText = '';
+  
+    // Drag and drop handling
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+  
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+  
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      handleFile(file);
+    });
+  
+    dropZone.addEventListener('click', () => {
+      imageUpload.click();
+    });
+  
+    // File input handling
+    imageUpload.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      handleFile(file);
+    });
+  
+    // Clipboard paste handling
+    document.addEventListener('paste', (e) => {
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          handleFile(file);
+          break;
+        }
+      }
+    });
+  
+    function handleFile(file) {
+      if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      } else {
+        alert('Please upload a valid image file.');
+      }
+    }
+  
+    // Draw uploaded image on canvas and perform OCR
+    img.onload = () => {
+      const containerWidth = canvasContainer.clientWidth;
+      const containerHeight = canvasContainer.clientHeight;
+      const imgAspectRatio = img.width / img.height;
+      const containerAspectRatio = containerWidth / containerHeight;
+  
+      let canvasWidth, canvasHeight;
+  
+      if (imgAspectRatio > containerAspectRatio) {
+        canvasWidth = containerWidth;
+        canvasHeight = containerWidth / imgAspectRatio;
+      } else {
+        canvasHeight = containerHeight;
+        canvasWidth = containerHeight * imgAspectRatio;
+      }
+  
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+      recognizedWords = []; // Clear previous recognition data
+  
+      loadingIndicator.style.display = 'block';
+  
+      // Run OCR on the image (Only once)
+      Tesseract.recognize(img.src, 'eng', {
+        logger: (m) => console.log(m),
+      })
+        .then(({ data: { words } }) => {
+          recognizedWords = words.map(word => ({
+            ...word,
+            bbox: {
+              x0: word.bbox.x0 * (canvasWidth / img.width),
+              y0: word.bbox.y0 * (canvasHeight / img.height),
+              x1: word.bbox.x1 * (canvasWidth / img.width),
+              y1: word.bbox.y1 * (canvasHeight / img.height)
+            }
+          }));
+          console.log('Words recognized:', recognizedWords);
+          loadingIndicator.style.display = 'none';
+        })
+        .catch((error) => {
+          console.error('Error:', error);
+          alert('Error recognizing text. Please try again.');
+          loadingIndicator.style.display = 'none';
+        });
+    };
+  
+    // Mouse events for text selection
+    canvas.addEventListener('mousedown', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      isDragging = true;
+    });
+  
+    canvas.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        const rect = canvas.getBoundingClientRect();
+        endX = e.clientX - rect.left;
+        endY = e.clientY - rect.top;
+  
+        // Redraw image and show selection rectangle
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(
+          Math.min(startX, endX),
+          Math.min(startY, endY),
+          Math.abs(endX - startX),
+          Math.abs(endY - startY)
+        );
+      }
+    });
+  
+    canvas.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        selectedText = getSelectedText(
+          Math.min(startX, endX),
+          Math.min(startY, endY),
+          Math.max(startX, endX),
+          Math.max(startY, endY)
+        );
+        selectedTextDiv.textContent = selectedText;
+        
+        // Ensure the focus is maintained and text is added
+        if (activeField && activeField.tagName === 'INPUT') {
+          activeField.value = selectedText.trim();
+          activeField.focus(); // Re-focus the active input field
+        }
+  
+        copyToClipboard(selectedText);
+      }
+    });
+  
+    // Get selected text based on the selection rectangle
+    function getSelectedText(sx, sy, ex, ey) {
+      const selectedWords = recognizedWords
+        .filter((word) => {
+          const { x0, y0, x1, y1 } = word.bbox;
+          return isIntersecting(x0, y0, x1, y1, sx, sy, ex, ey);
+        })
+        .sort((a, b) => {
+          const aCenter = (a.bbox.y0 + a.bbox.y1) / 2;
+          const bCenter = (b.bbox.y0 + b.bbox.y1) / 2;
+          return aCenter - bCenter || a.bbox.x0 - b.bbox.x0;
+        });
+  
+      return selectedWords.map((word) => word.text).join(' ');
+    }
+  
+    // Check if two rectangles intersect (selection region with text region)
+    function isIntersecting(x0, y0, x1, y1, sx, sy, ex, ey) {
+      return !(x1 < sx || x0 > ex || y1 < sy || y0 > ey);
+    }
+  
+    // Copy text to clipboard and show notification
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        copyNotification.style.display = 'block';
+        setTimeout(() => {
+          copyNotification.style.display = 'none';
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy text: ', err);
+      });
+    }
+  
+    // Focus handling for inputs
+    document.querySelectorAll('input').forEach((input) => {
+      input.addEventListener('focus', (e) => {
+        activeField = e.target;
+      });
+    });
+  
+    // Resize handling
+    window.addEventListener('resize', () => {
+      if (img.src) {
+        img.onload(); // Redraw the image and adjust canvas size
+      }
+    });
+function opena(){
+    document.getElementById("form1").style.display="block";
+    document.getElementById("btn").style.display="none";
+
+}
+  </script>
+  
+
+  
+</body>
+</html>
